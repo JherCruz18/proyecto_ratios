@@ -73,6 +73,14 @@ if not usuario:
 id_sucursal = usuario[0]
 nombre_sucursal = usuario[1] if usuario[1] else "Sucursal Desconocida"
 
+if "id_usuario" not in st.session_state:
+    st.warning("Debes iniciar sesión")
+    st.stop()
+
+if "nombre_sucursal" not in st.session_state:
+    st.error("Sesión incompleta. Vuelve a iniciar sesión.")
+    st.stop()
+
 # =========================
 # TITULO
 # =========================

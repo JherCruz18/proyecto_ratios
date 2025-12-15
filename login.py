@@ -17,9 +17,11 @@ if st.button("Ingresar"):
                     u.id_usuario,
                     u.username,
                     r.nombre AS rol,
-                    u.id_sucursal
+                    u.id_sucursal,
+                    s.nombre AS nombre_sucursal
                 FROM usuario u
                 JOIN rol r ON u.id_rol = r.id_rol
+                LEFT JOIN sucursal s ON s.id_sucursal = u.id_sucursal
                 WHERE u.username = :user 
                   AND u.password = :pass
                   AND r.estado = 1
@@ -28,15 +30,16 @@ if st.button("Ingresar"):
         ).fetchone()
 
     if result:
-        st.session_state["id_usuario"] = result[0]
-        st.session_state["username"] = result[1]
-        st.session_state["rol"] = result[2]
-        st.session_state["id_sucursal"] = result[3]
+        st.session_state["id_usuario"] = result.id_usuario
+        st.session_state["username"] = result.username
+        st.session_state["rol"] = result.rol
+        st.session_state["id_sucursal"] = result.id_sucursal
+        st.session_state["nombre_sucursal"] = result.nombre_sucursal  # ✅ CLAVE
 
         st.success("✅ Login correcto")
 
         # Redirección por rol
-        if result[2] == "admin":
+        if result.rol == "admin":
             st.switch_page("pages/admin_ventas.py")
         else:
             st.switch_page("pages/carbon.py")

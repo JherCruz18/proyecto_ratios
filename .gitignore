@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.pyc
+
+# Entorno virtual
+.venv/
+
+# Archivos generados
+Reporte_*.xlsx
+
+# Backups / dumps
+*.dump
+*.backup
+*.sql
