@@ -1,4 +1,4 @@
-import streamlit as st
+import streamlit as st 
 from sqlalchemy import text
 from db import engine
 import pandas as pd
@@ -23,7 +23,7 @@ if st.session_state.get("rol") != "admin":
     st.stop()
 
 # =================================================
-# 🏢 SELECCIÓN DE SUCURSAL
+# 🏢 CARGAR SUCURSALES
 # =================================================
 with engine.connect() as conn:
     sucursales = conn.execute(text("""
@@ -35,6 +35,9 @@ with engine.connect() as conn:
 
 suc_dict = {s[1]: int(s[0]) for s in sucursales}
 
+# =================================================
+# 🏪 REGISTRAR VENTA
+# =================================================
 st.subheader("🏪 Registrar venta del día")
 col1, col2, col3 = st.columns([3, 2, 2])
 
@@ -103,158 +106,175 @@ if st.button("💾 Registrar / Actualizar Venta", use_container_width=True):
         st.exception(e)
 
 # =================================================
-# 📊 HISTORIAL DE VENTAS
+# 📌 FILTRO DE SUCURSAL
 # =================================================
 st.divider()
+st.subheader("📌 Filtro de Sucursal")
+
+sucursal_filtro = st.selectbox(
+    "Filtrar ventas por sucursal:",
+    ["Todas"] + list(suc_dict.keys()),
+    key="filtro_sucursal"
+)
+
+# =================================================
+# 📊 HISTORIAL DE VENTAS
+# =================================================
 st.subheader("📊 Historial de Ventas Registradas")
 
+query = """
+    SELECT 
+        r.fecha,
+        s.nombre AS sucursal,
+        r.venta_total,
+        r.id_sucursal
+    FROM registro_insumo r
+    JOIN sucursal s ON r.id_sucursal = s.id_sucursal
+    WHERE r.venta_total IS NOT NULL
+"""
+
+params = {}
+
+if sucursal_filtro != "Todas":
+    query += " AND s.nombre = :sucursal_nombre"
+    params["sucursal_nombre"] = sucursal_filtro
+
+query += " ORDER BY r.fecha DESC"
+
 with engine.connect() as conn:
-    df = pd.read_sql(text("""
-        SELECT 
-            r.fecha,
-            s.nombre AS sucursal,
-            r.venta_total,
-            r.id_sucursal
-        FROM registro_insumo r
-        JOIN sucursal s ON r.id_sucursal = s.id_sucursal
-        WHERE r.venta_total IS NOT NULL
-        ORDER BY r.fecha DESC
-    """), conn)
+    df = pd.read_sql(text(query), conn, params=params)
 
 if df.empty:
-    st.info("📭 No hay ventas registradas todavía.")
-else:
-    df["fecha"] = df["fecha"].astype(str)
-    df["id_sucursal"] = df["id_sucursal"].astype(int)
+    st.info("📭 No hay ventas registradas con los filtros seleccionados.")
+    st.stop()
 
-    st.dataframe(
-        df[["fecha", "sucursal", "venta_total"]],
-        use_container_width=True,
-        hide_index=True,
+df["fecha"] = df["fecha"].astype(str)
+df["id_sucursal"] = df["id_sucursal"].astype(int)
+
+st.dataframe(
+    df[["fecha", "sucursal", "venta_total"]],
+    use_container_width=True,
+    hide_index=True,
+)
+
+# =================================================
+# ✏️ EDITAR / ELIMINAR VENTA
+# =================================================
+st.divider()
+st.subheader("✏️ Editar o Eliminar Venta")
+
+col_f, col_s = st.columns([2, 2])
+
+with col_f:
+    fecha_selec = st.selectbox(
+        "Selecciona una fecha",
+        sorted(df["fecha"].unique(), reverse=True),
+        key="fecha_edit_venta"
     )
 
-    # =================================================
-    # ✏️ EDITAR / ELIMINAR VENTA
-    # =================================================
+df_filtrado = df[df["fecha"] == str(fecha_selec)]
+
+if df_filtrado.empty:
+    st.warning("⚠ No se encontró una venta registrada para esa fecha.")
+    st.stop()
+
+venta_row = df_filtrado.iloc[0]
+
+id_sucursal_edit = int(venta_row["id_sucursal"])
+sucursal_sel = venta_row["sucursal"]
+venta_actual = float(venta_row["venta_total"])
+
+with col_s:
+    st.metric("Sucursal", sucursal_sel)
+    st.metric("Venta actual", f"S/. {venta_actual:,.2f}")
+
+col_edit, col_del = st.columns([1, 1])
+
+# --------------------
+# ✏️ ACTIVAR EDICIÓN
+# --------------------
+with col_edit:
+    if st.button("✏️ Editar Venta"):
+        st.session_state.edit_mode = True
+        st.session_state.fecha_edit = str(fecha_selec)
+        st.session_state.sucursal_edit = id_sucursal_edit
+        st.session_state.venta_edit = venta_actual
+
+# --------------------
+# 🗑 ELIMINAR VENTA
+# --------------------
+with col_del:
+    if st.button("🗑️ Eliminar Venta"):
+        try:
+            with engine.begin() as conn:
+                conn.execute(text("""
+                    UPDATE registro_insumo
+                    SET venta_total = NULL,
+                        ratio = 0.0
+                    WHERE fecha = :fecha
+                      AND id_sucursal = :id_sucursal
+                      AND id_insumo = 1
+                """), {
+                    "fecha": str(fecha_selec),
+                    "id_sucursal": id_sucursal_edit
+                })
+
+            st.success(f"🗑️ Venta eliminada correctamente")
+            st.rerun()
+
+        except Exception as e:
+            st.error("❌ Error al eliminar la venta.")
+            st.exception(e)
+
+# =================================================
+# FORMULARIO DE EDICIÓN
+# =================================================
+if st.session_state.get("edit_mode", False):
     st.divider()
-    st.subheader("✏️ Editar o Eliminar Venta")
+    st.subheader("📝 Editar Venta")
 
-    col_f, col_s = st.columns([2, 2])
+    nueva_venta = st.number_input(
+        "Nuevo monto (S/.)",
+        min_value=0.0,
+        value=st.session_state.venta_edit,
+        step=10.0
+    )
 
-    with col_f:
-        fecha_selec = st.selectbox(
-            "Selecciona una fecha",
-            sorted(df["fecha"].unique(), reverse=True),
-            key="fecha_edit_venta"
-        )
+    if st.button("💾 Guardar Cambios"):
+        try:
+            with engine.begin() as conn:
 
-    # Convertimos a string para comparar
-    fecha_selec_str = str(fecha_selec)
+                consumo = conn.execute(text("""
+                    SELECT consumo FROM registro_insumo
+                    WHERE fecha = :fecha
+                      AND id_sucursal = :sucursal
+                      AND id_insumo = 1
+                """), {
+                    "fecha": st.session_state.fecha_edit,
+                    "sucursal": st.session_state.sucursal_edit
+                }).fetchone()
 
-    # Filtrar de forma segura
-    df_filtrado = df[df["fecha"] == fecha_selec_str]
+                consumo_val = consumo[0] if consumo and consumo[0] else 0
+                ratio_nuevo = consumo_val / nueva_venta if nueva_venta > 0 else 0
 
-    if df_filtrado.empty:
-        st.warning("⚠ No se encontró una venta registrada para esa fecha.")
-        st.stop()
+                conn.execute(text("""
+                    UPDATE registro_insumo
+                    SET venta_total = :venta,
+                        ratio = :ratio
+                    WHERE fecha = :fecha
+                      AND id_sucursal = :sucursal
+                      AND id_insumo = 1
+                """), {
+                    "venta": nueva_venta,
+                    "ratio": ratio_nuevo,
+                    "fecha": st.session_state.fecha_edit,
+                    "sucursal": st.session_state.sucursal_edit
+                })
 
-    venta_row = df_filtrado.iloc[0]
+            st.success("💾 Venta actualizada correctamente")
+            st.session_state.edit_mode = False
+            st.rerun()
 
-    id_sucursal_edit = int(venta_row["id_sucursal"])
-    sucursal_sel = venta_row["sucursal"]
-    venta_actual = float(venta_row["venta_total"])
-
-    with col_s:
-        st.metric("Sucursal", sucursal_sel)
-        st.metric("Venta actual", f"S/. {venta_actual:,.2f}")
-
-    col_edit, col_del = st.columns([1, 1])
-
-    # --------------------
-    # ✏️ ACTIVAR EDICIÓN
-    # --------------------
-    with col_edit:
-        if st.button("✏️ Editar Venta"):
-            st.session_state.edit_mode = True
-            st.session_state.fecha_edit = fecha_selec_str
-            st.session_state.sucursal_edit = id_sucursal_edit
-            st.session_state.venta_edit = venta_actual
-
-    # --------------------
-    # 🗑 ELIMINAR VENTA
-    # --------------------
-    with col_del:
-        if st.button("🗑️ Eliminar Venta"):
-            try:
-                with engine.begin() as conn:
-                    conn.execute(text("""
-                        UPDATE registro_insumo
-                        SET venta_total = NULL,
-                            ratio = 0.0
-                        WHERE fecha = :fecha
-                          AND id_sucursal = :id_sucursal
-                          AND id_insumo = 1
-                    """), {
-                        "fecha": fecha_selec_str,
-                        "id_sucursal": id_sucursal_edit
-                    })
-
-                st.success(f"🗑️ Venta eliminada correctamente")
-                st.rerun()
-
-            except Exception as e:
-                st.error("❌ Error al eliminar la venta.")
-                st.exception(e)
-
-    # =================================================
-    # FORMULARIO DE EDICIÓN
-    # =================================================
-    if st.session_state.get("edit_mode", False):
-        st.divider()
-        st.subheader("📝 Editar Venta")
-
-        nueva_venta = st.number_input(
-            "Nuevo monto (S/.)",
-            min_value=0.0,
-            value=st.session_state.venta_edit,
-            step=10.0
-        )
-
-        if st.button("💾 Guardar Cambios"):
-            try:
-                with engine.begin() as conn:
-
-                    consumo = conn.execute(text("""
-                        SELECT consumo FROM registro_insumo
-                        WHERE fecha = :fecha
-                          AND id_sucursal = :sucursal
-                          AND id_insumo = 1
-                    """), {
-                        "fecha": st.session_state.fecha_edit,
-                        "sucursal": st.session_state.sucursal_edit
-                    }).fetchone()
-
-                    consumo_val = consumo[0] if consumo and consumo[0] else 0
-                    ratio_nuevo = consumo_val / nueva_venta if nueva_venta > 0 else 0
-
-                    conn.execute(text("""
-                        UPDATE registro_insumo
-                        SET venta_total = :venta,
-                            ratio = :ratio
-                        WHERE fecha = :fecha
-                          AND id_sucursal = :sucursal
-                          AND id_insumo = 1
-                    """), {
-                        "venta": nueva_venta,
-                        "ratio": ratio_nuevo,
-                        "fecha": st.session_state.fecha_edit,
-                        "sucursal": st.session_state.sucursal_edit
-                    })
-
-                st.success("💾 Venta actualizada correctamente")
-                st.session_state.edit_mode = False
-                st.rerun()
-
-            except Exception as e:
-                st.error("❌ Error al actualizar la venta.")
-                st.exception(e)
+        except Exception as e:
+            st.error("❌ Error al actualizar la venta.")
+            st.exception(e)

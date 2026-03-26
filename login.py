@@ -3,7 +3,8 @@ from sqlalchemy import text
 from db import engine
 
 st.set_page_config(page_title="Login", layout="centered")
-st.title("🔐 Iniciar Sesión")
+st.title("🔐 PARDOS CHICKEN - GRUPO SILVA - LOGISTICA")
+
 
 usuario = st.text_input("Usuario")
 password = st.text_input("Contraseña", type="password")

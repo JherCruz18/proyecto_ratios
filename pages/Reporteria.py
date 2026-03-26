@@ -31,12 +31,18 @@ with c2:
 # =========================
 if st.button("📤 Exportar Excel", use_container_width=True):
     try:
+        # Crear timestamp aquí
+        timestamp = datetime.now().strftime("%d%m%Y_%H%M")
+
+        # Construir el nombre del archivo
+        nombre_archivo = f"Reporte_{nombre_sucursal}_{timestamp}.xlsx"
+
         ruta = exportar_carbon_excel(
             id_sucursal=id_sucursal,
             nombre_sucursal=nombre_sucursal,
             fecha_inicio=fecha_inicio,
             fecha_fin=fecha_fin,
-            salida=f"Reporte_{nombre_sucursal}.xlsx"
+            salida=nombre_archivo
         )
 
         with open(ruta, "rb") as f:
